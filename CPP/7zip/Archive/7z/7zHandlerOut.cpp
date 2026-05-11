@@ -749,6 +749,7 @@ Z7_COM7F_IMF(CHandler::UpdateItems(ISequentialOutStream *outStream, UInt32 numIt
 
   if (methodMode.PasswordIsDefined)
   {
+    methodMode.EncryptionMethodId = _encryptionMethodId;
     if (_encryptHeadersSpecified)
       encryptHeaders = _encryptHeaders;
     #ifndef Z7_NO_CRYPTO
@@ -760,6 +761,7 @@ Z7_COM7F_IMF(CHandler::UpdateItems(ISequentialOutStream *outStream, UInt32 numIt
     {
       headerMethod.PasswordIsDefined = methodMode.PasswordIsDefined;
       headerMethod.Password = methodMode.Password;
+      headerMethod.EncryptionMethodId = _encryptionMethodId;
     }
   }
 
@@ -874,6 +876,7 @@ void COutHandler::InitProps7z()
   _decoderCompatibilityVersion = k_decoderCompatibilityVersion;
   _enabledFilters.Clear();
   _disabledFilters.Clear();
+  _encryptionMethodId = k_AES;
 }
 
 void COutHandler::InitProps()
@@ -1020,6 +1023,20 @@ HRESULT COutHandler::SetProperty(const wchar_t *nameSpec, const PROPVARIANT &val
     {
       RINOK(PROPVARIANT_to_bool(value, _encryptHeaders))
       _encryptHeadersSpecified = true;
+      return S_OK;
+    }
+    
+    if (name.IsEqualTo("em"))
+    {
+      if (value.vt != VT_BSTR)
+        return E_INVALIDARG;
+      const wchar_t *m = value.bstrVal;
+      if (StringsAreEqualNoCase_Ascii(m, "AES256") || StringsAreEqualNoCase_Ascii(m, "AES-256"))
+        _encryptionMethodId = k_AES;
+      else if (StringsAreEqualNoCase_Ascii(m, "XChaCha20"))
+        _encryptionMethodId = k_XCHACHA20;
+      else
+        return E_INVALIDARG;
       return S_OK;
     }
     
