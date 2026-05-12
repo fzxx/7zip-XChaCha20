@@ -74,6 +74,10 @@ protected:
   
   void PrepareKey();
   CBase();
+  ~CBase()
+  {
+    Z7_memset_0_ARRAY(_nonce);
+  }
 };
 
 class CBaseCoder:
@@ -85,7 +89,11 @@ class CBaseCoder:
   Z7_IFACE_COM7_IMP(ICompressFilter)
   Z7_IFACE_COM7_IMP(ICryptoSetPassword)
 protected:
-  virtual ~CBaseCoder() {}
+  virtual ~CBaseCoder()
+  {
+    Z7_memset_0_ARRAY(_block);
+    Z7_memset_0_ARRAY(_derivedKey);
+  }
   
   static const unsigned kBlockSize = 64;
   Byte _block[kBlockSize];

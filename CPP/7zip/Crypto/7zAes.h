@@ -74,6 +74,10 @@ protected:
   
   void PrepareKey();
   CBase();
+  ~CBase()
+  {
+    Z7_memset_0_ARRAY(_iv);
+  }
 };
 
 class CBaseCoder:

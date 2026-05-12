@@ -33,14 +33,23 @@ static const unsigned k_NumCyclesPower_Supported_MAX = 24;
   a += b; d ^= a; d = ROTL32(d, 8); \
   c += d; b ^= c; b = ROTL32(b, 7);
 
+static bool ConstantTimeCompare(const Byte *a, const Byte *b, size_t size)
+{
+  volatile Byte result = 0;
+  for (size_t i = 0; i < size; i++)
+    result |= a[i] ^ b[i];
+  return result == 0;
+}
+
 bool CKeyInfo::IsEqualTo(const CKeyInfo &a) const
 {
   if (SaltSize != a.SaltSize || NumCyclesPower != a.NumCyclesPower)
     return false;
-  for (unsigned i = 0; i < SaltSize; i++)
-    if (Salt[i] != a.Salt[i])
-      return false;
-  return (Password == a.Password);
+  if (!ConstantTimeCompare(Salt, a.Salt, SaltSize))
+    return false;
+  if (Password.Size() != a.Password.Size())
+    return false;
+  return ConstantTimeCompare(Password, a.Password, Password.Size());
 }
 
 void CKeyInfo::CalcKey()
@@ -328,8 +337,12 @@ void CBaseCoder::ProcessData(Byte *data, UInt32 size)
     if (_blockPos == 0 || _blockPos >= kBlockSize)
     {
       Chacha20Block(_block, _derivedKey, _nonce + 16, _counter);
-      _counter++;
       _blockPos = 0;
+      _counter++;
+      if (_counter == 0)
+      {
+        memset(_block, 0, kBlockSize);
+      }
     }
     
     UInt32 remaining = kBlockSize - _blockPos;
