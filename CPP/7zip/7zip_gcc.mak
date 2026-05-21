@@ -827,6 +827,8 @@ $O/7zAes.o: ../../Crypto/7zAes.cpp
 	$(CXX) $(CXXFLAGS) $<
 $O/7zAesRegister.o: ../../Crypto/7zAesRegister.cpp
 	$(CXX) $(CXXFLAGS) $<
+$O/7zKeyDerivation.o: ../../Crypto/7zKeyDerivation.cpp
+	$(CXX) $(CXXFLAGS) $<
 $O/HmacSha1.o: ../../Crypto/HmacSha1.cpp
 	$(CXX) $(CXXFLAGS) $<
 $O/HmacSha256.o: ../../Crypto/HmacSha256.cpp

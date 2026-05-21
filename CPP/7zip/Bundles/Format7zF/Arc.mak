@@ -244,6 +244,7 @@ COMPRESS_OBJS = \
 CRYPTO_OBJS = \
   $O\7zAes.obj \
   $O\7zAesRegister.obj \
+  $O\7zKeyDerivation.obj \
   $O\XChaCha20.obj \
   $O\XChaCha20Register.obj \
   $O\HmacSha1.obj \

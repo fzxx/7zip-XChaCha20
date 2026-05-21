@@ -1941,6 +1941,14 @@ SOURCE=..\..\Crypto\7zAesRegister.cpp
 # End Source File
 # Begin Source File
 
+SOURCE=..\..\Crypto\7zKeyDerivation.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\Crypto\7zKeyDerivation.h
+# End Source File
+# Begin Source File
+
 SOURCE=..\..\Crypto\HmacSha1.cpp
 
 !IF  "$(CFG)" == "Alone - Win32 Release"
