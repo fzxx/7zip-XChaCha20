@@ -1035,6 +1035,8 @@ HRESULT COutHandler::SetProperty(const wchar_t *nameSpec, const PROPVARIANT &val
         _encryptionMethodId = k_AES;
       else if (StringsAreEqualNoCase_Ascii(m, "XChaCha20"))
         _encryptionMethodId = k_XCHACHA20;
+      else if (StringsAreEqualNoCase_Ascii(m, "XChaCha20Poly1305") || StringsAreEqualNoCase_Ascii(m, "XChaCha20-Poly1305"))
+        _encryptionMethodId = k_XCHACHA20_POLY1305;
       else
         return E_INVALIDARG;
       return S_OK;

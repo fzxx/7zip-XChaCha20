@@ -1734,8 +1734,12 @@ void CCompressDialog::SetEncryptionMethod()
     }
     ComboBox_AddStringAscii(_encryptionMethod, "AES-256");
     ComboBox_AddStringAscii(_encryptionMethod, "XChaCha20");
+    ComboBox_AddStringAscii(_encryptionMethod, "XChaCha20-Poly1305");
     int sel = 0;
-    if (encryptionMethod.IsPrefixedBy_Ascii_NoCase("xchacha"))
+    if (encryptionMethod.IsPrefixedBy_Ascii_NoCase("xchacha20poly1305")
+        || encryptionMethod.IsPrefixedBy_Ascii_NoCase("xchacha20-poly1305"))
+      sel = 2;
+    else if (encryptionMethod.IsPrefixedBy_Ascii_NoCase("xchacha"))
       sel = 1;
     else if (encryptionMethod.IsPrefixedBy_Ascii_NoCase("aes"))
       sel = 0;

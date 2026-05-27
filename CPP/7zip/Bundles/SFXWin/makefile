@@ -135,6 +135,8 @@ CRYPTO_OBJS = \
   $O\MyAes.obj \
   $O\XChaCha20.obj \
   $O\XChaCha20Register.obj \
+  $O\XChaCha20Poly1305.obj \
+  $O\XChaCha20Poly1305Register.obj \
   
 C_OBJS = \
   $O\7zStream.obj \

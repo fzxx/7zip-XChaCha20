@@ -247,6 +247,8 @@ CRYPTO_OBJS = \
   $O\7zKeyDerivation.obj \
   $O\XChaCha20.obj \
   $O\XChaCha20Register.obj \
+  $O\XChaCha20Poly1305.obj \
+  $O\XChaCha20Poly1305Register.obj \
   $O\HmacSha1.obj \
   $O\HmacSha256.obj \
   $O\MyAes.obj \

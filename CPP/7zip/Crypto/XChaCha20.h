@@ -19,6 +19,10 @@ using CKeyInfoCache = N7zKeyDerivation::CKeyInfoCache;
 using N7zKeyDerivation::kKeySize;
 
 const unsigned kNonceSize = 24;
+const unsigned k_NumCyclesPower_Supported_MAX = 24;
+
+void XChaCha20Block_Core(Byte *output, const Byte *key, const Byte *nonce, UInt64 counter);
+void XHChaCha20Block_Core(Byte *output, const Byte *key, const Byte *nonce);
 
 class CBase
 {
@@ -57,10 +61,8 @@ protected:
   Byte _derivedKey[kKeySize];
   bool _derivedKeyValid;
   
-  void HChaCha20Block(Byte *output, const Byte *key, const Byte *nonce);
-  void Chacha20Block(Byte *output, const Byte *key, const Byte *nonce, UInt64 counter);
   void ProcessData(Byte *data, UInt32 size);
-  void DeriveKey();
+  virtual void DeriveKey();
 };
 
 #ifndef Z7_EXTRACT_ONLY
