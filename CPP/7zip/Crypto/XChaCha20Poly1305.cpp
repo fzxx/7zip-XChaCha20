@@ -18,8 +18,6 @@
 #include "RandGen.h"
 #endif
 
-#include "ChaCha20Simd.h"
-
 namespace NCrypto {
 namespace NXChaCha20Poly1305 {
 
@@ -52,6 +50,7 @@ void CPoly1305::Reset()
 
 void CPoly1305::SetKey(const Byte *key)
 {
+  Reset();
   memcpy(_r, key, 16);
   _r[3] &= 15;
   _r[7] &= 15;
@@ -62,50 +61,172 @@ void CPoly1305::SetKey(const Byte *key)
   _r[12] &= 252;
 
   memcpy(_s, key + 16, 16);
-
-  memset(_h, 0, sizeof(_h));
-  _blockPos = 0;
-  _totalLen = 0;
-  _aadBlockPos = 0;
-  _aadLen = 0;
-  _finalized = false;
 }
 
-static void Poly1305_ProcessBlock(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
+#if defined(__SIZEOF_INT128__) && (__SIZEOF_INT128__ >= 16)
+  #define Z7_POLY1305_128BIT
+#elif defined(_M_AMD64)
+  #include <intrin.h>
+  #define Z7_POLY1305_128BIT
+#endif
+
+#ifdef Z7_POLY1305_128BIT
+static void Poly1305_ProcessBlock_128(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
 {
-  UInt64 d[8] = { 0 };
-  UInt64 c;
+  UInt64 d0 = GetUi32(h);
+  UInt64 d1 = GetUi32(h + 4);
+  UInt64 d2 = GetUi32(h + 8);
+  UInt64 d3 = GetUi32(h + 12) & 0x3FFFFFF;
 
-  for (unsigned i = 0; i < 3; i++)
-  {
-    d[i] = (UInt64)GetUi32(h + i * 4);
-  }
-  d[3] = ((UInt64)GetUi32(h + 12)) & 0x3FFFFFF;
+  UInt64 m0 = d0 & 0x3FFFFFF;
+  UInt64 m1 = (d0 >> 26) | ((d1 & 0xFFFFF) << 6);
+  UInt64 m2 = (d1 >> 20) | ((d2 & 0x3FFF) << 12);
+  UInt64 m3 = (d2 >> 14) | ((d3 & 0xFF) << 18);
+  UInt64 m4 = (d3 >> 8) & 0x3FFFF;
 
-  for (unsigned i = 0; i < 3; i++)
-  {
-    UInt64 t = GetUi32(block + i * 4);
-    d[i] += t;
-  }
-  d[3] += ((UInt64)GetUi32(block + 12)) & 0x3FFFFFF;
+  UInt64 msg_lo = GetUi64(block);
+  UInt64 msg_hi = GetUi64(block + 8);
+  UInt64 r0 = GetUi64(r);
+  UInt64 r1 = GetUi64(r + 8);
 
+#if defined(__SIZEOF_INT128__) && (__SIZEOF_INT128__ >= 16)
+  typedef unsigned __int128 U128;
+
+  U128 hv = (U128)m0 | ((U128)m1 << 26) | ((U128)m2 << 52) | ((U128)m3 << 78) | ((U128)m4 << 104);
+  U128 msg = (U128)msg_lo | ((U128)msg_hi << 64);
   if (hasHighBit)
-    d[3] |= 0x1000000;
+    msg |= (U128)1 << 128;
+  hv += msg;
 
-  UInt64 rr[4];
-  rr[0] = GetUi32(r) & 0x3FFFFFF;
-  rr[1] = ((UInt64)GetUi32(r + 3) >> 2) & 0x3FFFF03;
-  rr[2] = ((UInt64)GetUi32(r + 6) >> 4) & 0x3FFC0FF;
-  rr[3] = ((UInt64)GetUi32(r + 9) >> 6) & 0x3F03FFF;
+  U128 rv = (U128)r0 | ((U128)r1 << 64);
 
-  UInt64 m[8] = { 0 };
-  for (unsigned i = 0; i < 4; i++)
+  U128 product = hv * rv;
+
+  UInt64 a0 = (UInt64)product;
+  UInt64 a1 = (UInt64)(product >> 64);
+  UInt64 a2 = (UInt64)(product >> 128);
+  UInt64 a3 = (UInt64)(product >> 192);
+
+  U128 p_lo = (U128)a0 | ((U128)a1 << 64) | ((U128)(a2 & 3) << 128);
+  U128 p_hi = (a2 >> 2) | ((U128)a3 << 62);
+
+  U128 res = p_lo + p_hi * 5;
+
+  U128 overflow = res >> 130;
+  while (overflow)
   {
-    for (unsigned j = 0; j < 4; j++)
-    {
-      m[i + j] += d[i] * rr[j];
-    }
+    res = (res & (((U128)1 << 130) - 1)) + overflow * 5;
+    overflow = res >> 130;
   }
+
+  UInt64 lo = (UInt64)res;
+  UInt64 hi = (UInt64)(res >> 64);
+  UInt32 top = (UInt32)(res >> 128);
+
+  UInt64 limb0 = lo & 0x3FFFFFF;
+  UInt64 limb1 = (lo >> 26) & 0x3FFFFFF;
+  UInt64 limb2 = ((lo >> 52) | ((hi & 0x3FFF) << 12)) & 0x3FFFFFF;
+  UInt64 limb3 = (hi >> 14) & 0x3FFFFFF;
+  UInt64 limb4 = ((hi >> 40) | ((UInt64)top << 24)) & 0x3FFFFFF;
+
+  SetUi32(h, (UInt32)(limb0 | (limb1 << 26)));
+  SetUi32(h + 4, (UInt32)((limb1 >> 6) | (limb2 << 20)));
+  SetUi32(h + 8, (UInt32)((limb2 >> 12) | (limb3 << 14)));
+  SetUi32(h + 12, (UInt32)((limb3 >> 18) | (limb4 << 8)));
+#elif defined(_M_AMD64)
+  {
+    UInt64 hv0 = m0 | (m1 << 26) | ((m2 & 0xFFF) << 52);
+    UInt64 hv1 = (m2 >> 12) | (m3 << 14) | (m4 << 40);
+    UInt64 hv2 = 0;
+
+    unsigned char c;
+    c = _addcarry_u64(0, hv0, msg_lo, &hv0);
+    c = _addcarry_u64(c, hv1, msg_hi, &hv1);
+    hv2 += c + (hasHighBit ? 1 : 0);
+
+    UInt64 d0_hi, d0_lo = _umul128(hv0, r0, &d0_hi);
+    UInt64 d1a_hi, d1a_lo = _umul128(hv0, r1, &d1a_hi);
+    UInt64 d1b_hi, d1b_lo = _umul128(hv1, r0, &d1b_hi);
+    UInt64 d2a_hi, d2a_lo = _umul128(hv1, r1, &d2a_hi);
+    UInt64 d2b_hi, d2b_lo = _umul128(hv2, r0, &d2b_hi);
+    UInt64 d3_hi, d3_lo = _umul128(hv2, r1, &d3_hi);
+
+    UInt64 a0 = d0_lo, a1 = d0_hi, a2 = 0, a3 = 0;
+    c = _addcarry_u64(0, a1, d1a_lo, &a1);
+    c = _addcarry_u64(c, a2, d1a_hi, &a2);
+    c = _addcarry_u64(c, a3, 0, &a3);
+    c = _addcarry_u64(0, a1, d1b_lo, &a1);
+    c = _addcarry_u64(c, a2, d1b_hi, &a2);
+    c = _addcarry_u64(c, a3, 0, &a3);
+    c = _addcarry_u64(0, a2, d2a_lo, &a2);
+    c = _addcarry_u64(c, a3, d2a_hi, &a3);
+    c = _addcarry_u64(0, a2, d2b_lo, &a2);
+    c = _addcarry_u64(c, a3, d2b_hi, &a3);
+    UInt64 a4 = c;
+    c = _addcarry_u64(0, a3, d3_lo, &a3);
+    c = _addcarry_u64(c, a4, d3_hi, &a4);
+
+    UInt64 hi[3];
+    hi[0] = (a2 >> 2) | (a3 << 62);
+    hi[1] = (a3 >> 2) | (a4 << 62);
+    hi[2] = a4 >> 2;
+
+    UInt64 h5_0_hi, h5_0 = _umul128(hi[0], 5, &h5_0_hi);
+    UInt64 h5_1_hi, h5_1 = _umul128(hi[1], 5, &h5_1_hi);
+    UInt64 h5_2 = hi[2] * 5;
+
+    UInt64 lo0 = a0, lo1 = a1, lo2 = a2 & 3, lo3 = 0;
+    c = _addcarry_u64(0, lo0, h5_0, &lo0);
+    c = _addcarry_u64(c, lo1, h5_0_hi, &lo1);
+    c = _addcarry_u64(c, lo2, 0, &lo2);
+    c = _addcarry_u64(0, lo1, h5_1, &lo1);
+    c = _addcarry_u64(c, lo2, h5_1_hi, &lo2);
+    c = _addcarry_u64(c, lo3, 0, &lo3);
+    c = _addcarry_u64(0, lo2, h5_2, &lo2);
+    c = _addcarry_u64(c, lo3, 0, &lo3);
+
+    UInt64 ov0 = lo2 >> 2;
+    lo2 &= 3;
+    lo3 = 0;
+
+    UInt64 ov5_lo, ov5_hi;
+    ov5_lo = _umul128(ov0, 5, &ov5_hi);
+    c = _addcarry_u64(0, lo0, ov5_lo, &lo0);
+    c = _addcarry_u64(c, lo1, ov5_hi, &lo1);
+    c = _addcarry_u64(c, lo2, 0, &lo2);
+
+    ov0 = lo2 >> 2;
+    if (ov0)
+    {
+      lo2 &= 3;
+      ov5_lo = _umul128(ov0, 5, &ov5_hi);
+      c = _addcarry_u64(0, lo0, ov5_lo, &lo0);
+      c = _addcarry_u64(c, lo1, ov5_hi, &lo1);
+      c = _addcarry_u64(c, lo2, 0, &lo2);
+    }
+
+    UInt64 limb0 = lo0 & 0x3FFFFFF;
+    UInt64 limb1 = (lo0 >> 26) & 0x3FFFFFF;
+    UInt64 limb2 = ((lo0 >> 52) | ((lo1 & 0x3FFF) << 12)) & 0x3FFFFFF;
+    UInt64 limb3 = (lo1 >> 14) & 0x3FFFFFF;
+    UInt64 limb4 = ((lo1 >> 40) | ((UInt64)lo2 << 24)) & 0x3FFFFFF;
+
+    SetUi32(h, (UInt32)(limb0 | (limb1 << 26)));
+    SetUi32(h + 4, (UInt32)((limb1 >> 6) | (limb2 << 20)));
+    SetUi32(h + 8, (UInt32)((limb2 >> 12) | (limb3 << 14)));
+    SetUi32(h + 12, (UInt32)((limb3 >> 18) | (limb4 << 8)));
+  }
+#endif
+}
+#else
+#define Poly1305_ProcessBlock_128 Poly1305_ProcessBlock_32
+#endif
+
+#ifndef Z7_POLY1305_128BIT
+
+static void Poly1305_ReduceAndPack(Byte h[16], UInt64 m[8])
+{
+  UInt64 c;
 
   c = m[0] >> 26; m[0] &= 0x3FFFFFF;
   m[1] += c;
@@ -141,6 +262,129 @@ static void Poly1305_ProcessBlock(Byte h[16], const Byte r[16], const Byte block
   SetUi32(h + 8, (UInt32)((m[2] >> 12) | (m[3] << 14)));
   SetUi32(h + 12, (UInt32)((m[3] >> 18) | (m[4] << 8)));
 }
+
+#if defined(MY_CPU_X86_OR_AMD64) && defined(MY_CPU_SSE2)
+
+#include <emmintrin.h>
+
+static void Poly1305_ProcessBlock_SSE2_4Way(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
+{
+  UInt64 d[4];
+
+  for (unsigned i = 0; i < 3; i++)
+    d[i] = (UInt64)GetUi32(h + i * 4);
+  d[3] = ((UInt64)GetUi32(h + 12)) & 0x3FFFFFF;
+
+  for (unsigned i = 0; i < 3; i++)
+    d[i] += GetUi32(block + i * 4);
+  d[3] += ((UInt64)GetUi32(block + 12)) & 0x3FFFFFF;
+
+  if (hasHighBit)
+    d[3] |= 0x1000000;
+
+  UInt64 rr[4];
+  rr[0] = GetUi32(r) & 0x3FFFFFF;
+  rr[1] = ((UInt64)GetUi32(r + 3) >> 2) & 0x3FFFF03;
+  rr[2] = ((UInt64)GetUi32(r + 6) >> 4) & 0x3FFC0FF;
+  rr[3] = ((UInt64)GetUi32(r + 9) >> 6) & 0x3F03FFF;
+
+  __m128i d_vec = _mm_set_epi32((int)(UInt32)d[3], (int)(UInt32)d[2],
+                                 (int)(UInt32)d[1], (int)(UInt32)d[0]);
+  __m128i d_swap = _mm_shuffle_epi32(d_vec, _MM_SHUFFLE(0, 3, 0, 1));
+
+  __m128i r_even = _mm_set_epi32(0, (int)(UInt32)rr[2], 0, (int)(UInt32)rr[0]);
+  __m128i r_odd  = _mm_set_epi32(0, (int)(UInt32)rr[3], 0, (int)(UInt32)rr[1]);
+  __m128i r_cross1 = _mm_set_epi32(0, (int)(UInt32)rr[0], 0, (int)(UInt32)rr[2]);
+  __m128i r_cross2 = _mm_set_epi32(0, (int)(UInt32)rr[1], 0, (int)(UInt32)rr[3]);
+
+  UInt64 m[8] = { 0 };
+  __m128i prod;
+  UInt64 pLo, pHi;
+
+  #define POLY1305_SSE2_MUL_ACC(d_op, r_op, off_lo, off_hi) \
+    prod = _mm_mul_epu32(d_op, r_op); \
+    _mm_storel_epi64((__m128i *)&pLo, prod); \
+    _mm_storel_epi64((__m128i *)&pHi, _mm_srli_si128(prod, 8)); \
+    m[off_lo] += pLo; \
+    m[off_hi] += pHi;
+
+  POLY1305_SSE2_MUL_ACC(d_vec,  r_even,   0, 4)
+  POLY1305_SSE2_MUL_ACC(d_vec,  r_odd,    1, 5)
+  POLY1305_SSE2_MUL_ACC(d_swap, r_even,   1, 5)
+  POLY1305_SSE2_MUL_ACC(d_swap, r_odd,    2, 6)
+  POLY1305_SSE2_MUL_ACC(d_vec,  r_cross1, 2, 2)
+  POLY1305_SSE2_MUL_ACC(d_vec,  r_cross2, 3, 3)
+  POLY1305_SSE2_MUL_ACC(d_swap, r_cross1, 3, 3)
+  POLY1305_SSE2_MUL_ACC(d_swap, r_cross2, 4, 4)
+
+  #undef POLY1305_SSE2_MUL_ACC
+
+  Poly1305_ReduceAndPack(h, m);
+}
+
+static void Poly1305_ProcessBlock_SSE2(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
+{
+  Poly1305_ProcessBlock_SSE2_4Way(h, r, block, hasHighBit);
+}
+
+#endif
+
+#if !defined(MY_CPU_X86_OR_AMD64) || !defined(MY_CPU_SSE2)
+static void Poly1305_ProcessBlock_32(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
+{
+  UInt64 d[8] = { 0 };
+
+  for (unsigned i = 0; i < 3; i++)
+  {
+    d[i] = (UInt64)GetUi32(h + i * 4);
+  }
+  d[3] = ((UInt64)GetUi32(h + 12)) & 0x3FFFFFF;
+
+  for (unsigned i = 0; i < 3; i++)
+  {
+    UInt64 t = GetUi32(block + i * 4);
+    d[i] += t;
+  }
+  d[3] += ((UInt64)GetUi32(block + 12)) & 0x3FFFFFF;
+
+  if (hasHighBit)
+    d[3] |= 0x1000000;
+
+  UInt64 rr[4];
+  rr[0] = GetUi32(r) & 0x3FFFFFF;
+  rr[1] = ((UInt64)GetUi32(r + 3) >> 2) & 0x3FFFF03;
+  rr[2] = ((UInt64)GetUi32(r + 6) >> 4) & 0x3FFC0FF;
+  rr[3] = ((UInt64)GetUi32(r + 9) >> 6) & 0x3F03FFF;
+
+  UInt64 m[8] = { 0 };
+  for (unsigned i = 0; i < 4; i++)
+  {
+    for (unsigned j = 0; j < 4; j++)
+    {
+      m[i + j] += d[i] * rr[j];
+    }
+  }
+
+  Poly1305_ReduceAndPack(h, m);
+}
+#endif
+#endif
+
+#ifdef Z7_POLY1305_128BIT
+static void Poly1305_ProcessBlock(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
+{
+  Poly1305_ProcessBlock_128(h, r, block, hasHighBit);
+}
+#else
+static void Poly1305_ProcessBlock(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
+{
+#if defined(MY_CPU_X86_OR_AMD64) && defined(MY_CPU_SSE2)
+  Poly1305_ProcessBlock_SSE2(h, r, block, hasHighBit);
+#else
+  Poly1305_ProcessBlock_32(h, r, block, hasHighBit);
+#endif
+}
+#endif
 
 void CPoly1305::Update(const Byte *data, UInt32 size)
 {
@@ -212,28 +456,25 @@ void CPoly1305::UpdateAad(const Byte *data, UInt32 size)
   }
 }
 
+void CPoly1305::PadAndProcessBlock(Byte *buf, unsigned bufPos, UInt64 len)
+{
+  unsigned mod = (unsigned)(len & 0xF);
+  if (mod != 0)
+  {
+    unsigned padLen = 16 - mod;
+    memset(buf + bufPos, 0, padLen);
+    Poly1305_ProcessBlock(_h, _r, buf, true);
+  }
+}
+
 void CPoly1305::Final(Byte *tag)
 {
   if (_finalized)
     return;
   _finalized = true;
 
-  unsigned aadLenMod = (unsigned)(_aadLen & 0xF);
-  if (aadLenMod != 0)
-  {
-    unsigned padLen = 16 - aadLenMod;
-    memset(_aadBlock + _aadBlockPos, 0, padLen);
-    Poly1305_ProcessBlock(_h, _r, _aadBlock, true);
-  }
-
-  unsigned ctLenMod = (unsigned)(_totalLen & 0xF);
-
-  if (ctLenMod != 0)
-  {
-    unsigned padLen = 16 - ctLenMod;
-    memset(_block + _blockPos, 0, padLen);
-    Poly1305_ProcessBlock(_h, _r, _block, true);
-  }
+  PadAndProcessBlock(_aadBlock, _aadBlockPos, _aadLen);
+  PadAndProcessBlock(_block, _blockPos, _totalLen);
 
   {
     Byte lenBlock[16];
@@ -289,129 +530,6 @@ void CBaseCoder::DeriveKey()
     _poly1305.UpdateAad(_aad, _aadSize);
   }
   _derivedKeyValid = true;
-}
-
-void CBaseCoder::ProcessData(Byte *data, UInt32 size)
-{
-  if (!_derivedKeyValid)
-  {
-    DeriveKey();
-  }
-
-#ifdef MY_CPU_X86_OR_AMD64
-#ifdef MY_CPU_SSE2
-  InitSIMD();
-
-  if (size >= kBlockSize * 4)
-  {
-    UInt32 state[16];
-    state[0] = GetUi32(kSigma);
-    state[1] = GetUi32(kSigma + 4);
-    state[2] = GetUi32(kSigma + 8);
-    state[3] = GetUi32(kSigma + 12);
-    state[4] = GetUi32(_derivedKey);
-    state[5] = GetUi32(_derivedKey + 4);
-    state[6] = GetUi32(_derivedKey + 8);
-    state[7] = GetUi32(_derivedKey + 12);
-    state[8] = GetUi32(_derivedKey + 16);
-    state[9] = GetUi32(_derivedKey + 20);
-    state[10] = GetUi32(_derivedKey + 24);
-    state[11] = GetUi32(_derivedKey + 28);
-    state[12] = (UInt32)(_counter & 0xFFFFFFFF);
-    state[13] = (UInt32)(_counter >> 32);
-    state[14] = GetUi32(_nonce + 16);
-    state[15] = GetUi32(_nonce + 20);
-
-#ifdef MY_CPU_AMD64
-    if (g_AVX2Enabled && size >= kBlockSize * 8)
-    {
-      while (size >= kBlockSize * 8)
-      {
-        ChaCha20_OperateKeystream_AVX2(state, data, data);
-        state[12] += 8;
-        if (state[12] < 8)
-          state[13]++;
-        data += kBlockSize * 8;
-        size -= kBlockSize * 8;
-      }
-    }
-#endif
-
-    if (g_SSE2Enabled && size >= kBlockSize * 4)
-    {
-      while (size >= kBlockSize * 4)
-      {
-        ChaCha20_OperateKeystream_SSE2(state, data, data);
-        state[12] += 4;
-        if (state[12] < 4)
-          state[13]++;
-        data += kBlockSize * 4;
-        size -= kBlockSize * 4;
-      }
-    }
-
-    _counter = (UInt64)state[13] << 32 | state[12];
-  }
-#endif
-#endif
-
-  while (size > 0)
-  {
-    if (_blockPos == 0 || _blockPos >= kBlockSize)
-    {
-      NXChaCha20::XChaCha20Block_Core(_block, _derivedKey, _nonce + 16, _counter);
-      _blockPos = 0;
-      _counter++;
-      if (_counter == 0)
-      {
-        memset(_block, 0, kBlockSize);
-      }
-    }
-
-    UInt32 remaining = kBlockSize - _blockPos;
-    UInt32 toProcess = (size < remaining) ? size : remaining;
-
-    Byte *dataPtr = data;
-    const Byte *blockPtr = _block + _blockPos;
-    UInt32 count = toProcess;
-
-#ifdef MY_CPU_64BIT
-    while (count >= 8)
-    {
-      *(UInt64 *)dataPtr ^= *(const UInt64 *)blockPtr;
-      dataPtr += 8;
-      blockPtr += 8;
-      count -= 8;
-    }
-#endif
-
-    while (count >= 4)
-    {
-      *(UInt32 *)dataPtr ^= *(const UInt32 *)blockPtr;
-      dataPtr += 4;
-      blockPtr += 4;
-      count -= 4;
-    }
-
-    while (count--)
-      *dataPtr++ ^= *blockPtr++;
-
-    data += toProcess;
-    size -= toProcess;
-    _blockPos += toProcess;
-  }
-}
-
-Z7_COM7F_IMF(CBaseCoder::CryptoSetPassword(const Byte *data, UInt32 size))
-{
-  COM_TRY_BEGIN
-
-  _key.Password.Wipe();
-  _key.Password.CopyFrom(data, (size_t)size);
-  _derivedKeyValid = false;
-  return S_OK;
-
-  COM_TRY_END
 }
 
 Z7_COM7F_IMF(CBaseCoder::Init())
@@ -617,7 +735,12 @@ Z7_COM7F_IMF(CDecoder::CryptoAuthVerify(Int32 *result))
   Byte computedTag[kTagSize];
   _poly1305.Final(computedTag);
 
-  _authResult = (memcmp(computedTag, _expectedTag, kTagSize) == 0) ? 0 : 1;
+  {
+    volatile Byte diff = 0;
+    for (unsigned i = 0; i < kTagSize; i++)
+      diff |= computedTag[i] ^ _expectedTag[i];
+    _authResult = (diff == 0) ? 0 : 1;
+  }
   *result = _authResult;
 
   Z7_memset_0_ARRAY(computedTag);

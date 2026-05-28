@@ -1,5 +1,5 @@
 // ChaCha20Simd.h
-// Shared SIMD (SSE2/AVX2) acceleration code for ChaCha20/XChaCha20
+// Shared SIMD (SSE2/AVX2/NEON) acceleration code for ChaCha20/XChaCha20
 
 #ifndef ZIP7_CRYPTO_CHACHA20_SIMD_H
 #define ZIP7_CRYPTO_CHACHA20_SIMD_H
@@ -12,13 +12,17 @@
 #endif
 #endif
 
-#ifdef MY_CPU_X86_OR_AMD64
-
-#ifdef MY_CPU_SSE2
+#ifdef MY_CPU_ARM_OR_ARM64
+#include <arm_neon.h>
+#endif
 
 static const Byte kSigma[16] = {
   'e', 'x', 'p', 'a', 'n', 'd', ' ', '3', '2', '-', 'b', 'y', 't', 'e', ' ', 'k'
 };
+
+#ifdef MY_CPU_X86_OR_AMD64
+
+#ifdef MY_CPU_SSE2
 
 namespace {
 
@@ -494,6 +498,223 @@ static void InitSIMD()
 }
 
 #endif
+
+#elif defined(MY_CPU_ARM_OR_ARM64)
+
+namespace {
+
+template <unsigned int R>
+Z7_FORCE_INLINE uint32x4_t RotateLeft_NEON(const uint32x4_t val)
+{
+  return vorrq_u32(vshlq_n_u32(val, R), vshrq_n_u32(val, 32 - R));
+}
+
+template <>
+Z7_FORCE_INLINE uint32x4_t RotateLeft_NEON<8>(const uint32x4_t val)
+{
+  const uint8x16_t mask = {3,0,1,2, 7,4,5,6, 11,8,9,10, 15,12,13,14};
+  return vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(val), mask));
+}
+
+template <>
+Z7_FORCE_INLINE uint32x4_t RotateLeft_NEON<16>(const uint32x4_t val)
+{
+  return vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(val)));
+}
+
+Z7_FORCE_INLINE uint32x4_t Add64_NEON(const uint32x4_t a, const uint32x4_t b)
+{
+  return vreinterpretq_u32_u64(vaddq_u64(vreinterpretq_u64_u32(a), vreinterpretq_u64_u32(b)));
+}
+
+template <unsigned int S>
+Z7_FORCE_INLINE uint32x4_t Extract_NEON(const uint32x4_t val)
+{
+  return vextq_u32(val, val, S);
+}
+
+#define NEON_QUARTERROUND(a, b, c, d) \
+  a = vaddq_u32(a, b); \
+  d = veorq_u32(d, a); \
+  d = RotateLeft_NEON<16>(d); \
+  c = vaddq_u32(c, d); \
+  b = veorq_u32(b, c); \
+  b = RotateLeft_NEON<12>(b); \
+  a = vaddq_u32(a, b); \
+  d = veorq_u32(d, a); \
+  d = RotateLeft_NEON<8>(d); \
+  c = vaddq_u32(c, d); \
+  b = veorq_u32(b, c); \
+  b = RotateLeft_NEON<7>(b);
+
+Z7_NO_INLINE void ChaCha20_OperateKeystream_NEON(
+    const UInt32 *state,
+    const Byte *input,
+    Byte *output)
+{
+  const uint32x4_t state0 = vld1q_u32(state + 0);
+  const uint32x4_t state1 = vld1q_u32(state + 4);
+  const uint32x4_t state2 = vld1q_u32(state + 8);
+  const uint32x4_t state3 = vld1q_u32(state + 12);
+
+  const UInt32 CTR[12] = {1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0};
+  const uint32x4_t CTR1 = vld1q_u32(CTR + 0);
+  const uint32x4_t CTR2 = vld1q_u32(CTR + 4);
+  const uint32x4_t CTR3 = vld1q_u32(CTR + 8);
+
+  uint32x4_t r0_0 = state0;
+  uint32x4_t r0_1 = state1;
+  uint32x4_t r0_2 = state2;
+  uint32x4_t r0_3 = state3;
+
+  uint32x4_t r1_0 = state0;
+  uint32x4_t r1_1 = state1;
+  uint32x4_t r1_2 = state2;
+  uint32x4_t r1_3 = Add64_NEON(state3, CTR1);
+
+  uint32x4_t r2_0 = state0;
+  uint32x4_t r2_1 = state1;
+  uint32x4_t r2_2 = state2;
+  uint32x4_t r2_3 = Add64_NEON(state3, CTR2);
+
+  uint32x4_t r3_0 = state0;
+  uint32x4_t r3_1 = state1;
+  uint32x4_t r3_2 = state2;
+  uint32x4_t r3_3 = Add64_NEON(state3, CTR3);
+
+  for (int i = 0; i < 10; i++)
+  {
+    NEON_QUARTERROUND(r0_0, r0_1, r0_2, r0_3);
+    NEON_QUARTERROUND(r1_0, r1_1, r1_2, r1_3);
+    NEON_QUARTERROUND(r2_0, r2_1, r2_2, r2_3);
+    NEON_QUARTERROUND(r3_0, r3_1, r3_2, r3_3);
+
+    r0_1 = Extract_NEON<1>(r0_1);
+    r0_2 = Extract_NEON<2>(r0_2);
+    r0_3 = Extract_NEON<3>(r0_3);
+
+    r1_1 = Extract_NEON<1>(r1_1);
+    r1_2 = Extract_NEON<2>(r1_2);
+    r1_3 = Extract_NEON<3>(r1_3);
+
+    r2_1 = Extract_NEON<1>(r2_1);
+    r2_2 = Extract_NEON<2>(r2_2);
+    r2_3 = Extract_NEON<3>(r2_3);
+
+    r3_1 = Extract_NEON<1>(r3_1);
+    r3_2 = Extract_NEON<2>(r3_2);
+    r3_3 = Extract_NEON<3>(r3_3);
+
+    NEON_QUARTERROUND(r0_0, r0_1, r0_2, r0_3);
+    NEON_QUARTERROUND(r1_0, r1_1, r1_2, r1_3);
+    NEON_QUARTERROUND(r2_0, r2_1, r2_2, r2_3);
+    NEON_QUARTERROUND(r3_0, r3_1, r3_2, r3_3);
+
+    r0_1 = Extract_NEON<3>(r0_1);
+    r0_2 = Extract_NEON<2>(r0_2);
+    r0_3 = Extract_NEON<1>(r0_3);
+
+    r1_1 = Extract_NEON<3>(r1_1);
+    r1_2 = Extract_NEON<2>(r1_2);
+    r1_3 = Extract_NEON<1>(r1_3);
+
+    r2_1 = Extract_NEON<3>(r2_1);
+    r2_2 = Extract_NEON<2>(r2_2);
+    r2_3 = Extract_NEON<1>(r2_3);
+
+    r3_1 = Extract_NEON<3>(r3_1);
+    r3_2 = Extract_NEON<2>(r3_2);
+    r3_3 = Extract_NEON<1>(r3_3);
+  }
+
+  r0_0 = vaddq_u32(r0_0, state0);
+  r0_1 = vaddq_u32(r0_1, state1);
+  r0_2 = vaddq_u32(r0_2, state2);
+  r0_3 = vaddq_u32(r0_3, state3);
+
+  r1_0 = vaddq_u32(r1_0, state0);
+  r1_1 = vaddq_u32(r1_1, state1);
+  r1_2 = vaddq_u32(r1_2, state2);
+  r1_3 = vaddq_u32(r1_3, state3);
+  r1_3 = Add64_NEON(r1_3, CTR1);
+
+  r2_0 = vaddq_u32(r2_0, state0);
+  r2_1 = vaddq_u32(r2_1, state1);
+  r2_2 = vaddq_u32(r2_2, state2);
+  r2_3 = vaddq_u32(r2_3, state3);
+  r2_3 = Add64_NEON(r2_3, CTR2);
+
+  r3_0 = vaddq_u32(r3_0, state0);
+  r3_1 = vaddq_u32(r3_1, state1);
+  r3_2 = vaddq_u32(r3_2, state2);
+  r3_3 = vaddq_u32(r3_3, state3);
+  r3_3 = Add64_NEON(r3_3, CTR3);
+
+  if (input)
+  {
+    r0_0 = veorq_u32(vld1q_u32((const UInt32 *)(input + 0*16)), r0_0);
+    r0_1 = veorq_u32(vld1q_u32((const UInt32 *)(input + 1*16)), r0_1);
+    r0_2 = veorq_u32(vld1q_u32((const UInt32 *)(input + 2*16)), r0_2);
+    r0_3 = veorq_u32(vld1q_u32((const UInt32 *)(input + 3*16)), r0_3);
+  }
+
+  vst1q_u32((UInt32 *)(output + 0*16), r0_0);
+  vst1q_u32((UInt32 *)(output + 1*16), r0_1);
+  vst1q_u32((UInt32 *)(output + 2*16), r0_2);
+  vst1q_u32((UInt32 *)(output + 3*16), r0_3);
+
+  if (input)
+  {
+    r1_0 = veorq_u32(vld1q_u32((const UInt32 *)(input + 4*16)), r1_0);
+    r1_1 = veorq_u32(vld1q_u32((const UInt32 *)(input + 5*16)), r1_1);
+    r1_2 = veorq_u32(vld1q_u32((const UInt32 *)(input + 6*16)), r1_2);
+    r1_3 = veorq_u32(vld1q_u32((const UInt32 *)(input + 7*16)), r1_3);
+  }
+
+  vst1q_u32((UInt32 *)(output + 4*16), r1_0);
+  vst1q_u32((UInt32 *)(output + 5*16), r1_1);
+  vst1q_u32((UInt32 *)(output + 6*16), r1_2);
+  vst1q_u32((UInt32 *)(output + 7*16), r1_3);
+
+  if (input)
+  {
+    r2_0 = veorq_u32(vld1q_u32((const UInt32 *)(input + 8*16)), r2_0);
+    r2_1 = veorq_u32(vld1q_u32((const UInt32 *)(input + 9*16)), r2_1);
+    r2_2 = veorq_u32(vld1q_u32((const UInt32 *)(input + 10*16)), r2_2);
+    r2_3 = veorq_u32(vld1q_u32((const UInt32 *)(input + 11*16)), r2_3);
+  }
+
+  vst1q_u32((UInt32 *)(output + 8*16), r2_0);
+  vst1q_u32((UInt32 *)(output + 9*16), r2_1);
+  vst1q_u32((UInt32 *)(output + 10*16), r2_2);
+  vst1q_u32((UInt32 *)(output + 11*16), r2_3);
+
+  if (input)
+  {
+    r3_0 = veorq_u32(vld1q_u32((const UInt32 *)(input + 12*16)), r3_0);
+    r3_1 = veorq_u32(vld1q_u32((const UInt32 *)(input + 13*16)), r3_1);
+    r3_2 = veorq_u32(vld1q_u32((const UInt32 *)(input + 14*16)), r3_2);
+    r3_3 = veorq_u32(vld1q_u32((const UInt32 *)(input + 15*16)), r3_3);
+  }
+
+  vst1q_u32((UInt32 *)(output + 12*16), r3_0);
+  vst1q_u32((UInt32 *)(output + 13*16), r3_1);
+  vst1q_u32((UInt32 *)(output + 14*16), r3_2);
+  vst1q_u32((UInt32 *)(output + 15*16), r3_3);
+}
+
+}
+
+static bool g_NEONEnabled = false;
+static bool g_SIMDARMInitialized = false;
+
+static void InitSIMD()
+{
+  if (g_SIMDARMInitialized)
+    return;
+  g_SIMDARMInitialized = true;
+  g_NEONEnabled = CPU_IsSupported_NEON() != 0;
+}
 
 #endif
 

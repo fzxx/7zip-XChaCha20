@@ -46,8 +46,8 @@ class CBaseCoder:
   public CMyUnknownImp,
   public CBase
 {
-  Z7_IFACE_COM7_IMP(ICompressFilter)
-  Z7_IFACE_COM7_IMP(ICryptoSetPassword)
+  Z7_IFACE_COM7_IMP_NONFINAL(ICompressFilter)
+  Z7_IFACE_COM7_IMP_NONFINAL(ICryptoSetPassword)
 protected:
   virtual ~CBaseCoder()
   {

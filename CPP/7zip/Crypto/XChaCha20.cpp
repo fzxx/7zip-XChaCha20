@@ -31,6 +31,13 @@ namespace NXChaCha20 {
   a += b; d ^= a; d = ROTL32(d, 8); \
   c += d; b ^= c; b = ROTL32(b, 7);
 
+#define CHACHA20_10_DOUBLE_ROUNDS \
+  DOUBLE_ROUND; DOUBLE_ROUND; \
+  DOUBLE_ROUND; DOUBLE_ROUND; \
+  DOUBLE_ROUND; DOUBLE_ROUND; \
+  DOUBLE_ROUND; DOUBLE_ROUND; \
+  DOUBLE_ROUND; DOUBLE_ROUND;
+
 static CKeyInfoCache g_GlobalKeyCache(32);
 
 #ifndef Z7_ST
@@ -104,14 +111,10 @@ void XHChaCha20Block_Core(Byte *output, const Byte *key, const Byte *nonce)
   QUARTERROUND(x2, x7, x8,  x13) \
   QUARTERROUND(x3, x4, x9,  x14)
   
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  
+  CHACHA20_10_DOUBLE_ROUNDS
+
 #undef DOUBLE_ROUND
-  
+
   SetUi32(output, x0);
   SetUi32(output + 4, x1);
   SetUi32(output + 8, x2);
@@ -156,14 +159,10 @@ void XChaCha20Block_Core(Byte *output, const Byte *key, const Byte *nonce, UInt6
   QUARTERROUND(x2, x7, x8,  x13) \
   QUARTERROUND(x3, x4, x9,  x14)
   
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  DOUBLE_ROUND; DOUBLE_ROUND;
-  
+  CHACHA20_10_DOUBLE_ROUNDS
+
 #undef DOUBLE_ROUND
-  
+
   x0 += GetUi32(kSigma);
   x1 += GetUi32(kSigma + 4);
   x2 += GetUi32(kSigma + 8);
@@ -262,6 +261,43 @@ void CBaseCoder::ProcessData(Byte *data, UInt32 size)
   }
 #endif
 #endif
+
+#ifdef MY_CPU_ARM_OR_ARM64
+  InitSIMD();
+
+  if (g_NEONEnabled && size >= kBlockSize * 4)
+  {
+    UInt32 state[16];
+    state[0] = GetUi32(kSigma);
+    state[1] = GetUi32(kSigma + 4);
+    state[2] = GetUi32(kSigma + 8);
+    state[3] = GetUi32(kSigma + 12);
+    state[4] = GetUi32(_derivedKey);
+    state[5] = GetUi32(_derivedKey + 4);
+    state[6] = GetUi32(_derivedKey + 8);
+    state[7] = GetUi32(_derivedKey + 12);
+    state[8] = GetUi32(_derivedKey + 16);
+    state[9] = GetUi32(_derivedKey + 20);
+    state[10] = GetUi32(_derivedKey + 24);
+    state[11] = GetUi32(_derivedKey + 28);
+    state[12] = (UInt32)(_counter & 0xFFFFFFFF);
+    state[13] = (UInt32)(_counter >> 32);
+    state[14] = GetUi32(_nonce + 16);
+    state[15] = GetUi32(_nonce + 20);
+
+    while (size >= kBlockSize * 4)
+    {
+      ChaCha20_OperateKeystream_NEON(state, data, data);
+      state[12] += 4;
+      if (state[12] < 4)
+        state[13]++;
+      data += kBlockSize * 4;
+      size -= kBlockSize * 4;
+    }
+
+    _counter = (UInt64)state[13] << 32 | state[12];
+  }
+#endif
   
   while (size > 0)
   {
@@ -270,10 +306,6 @@ void CBaseCoder::ProcessData(Byte *data, UInt32 size)
       XChaCha20Block_Core(_block, _derivedKey, _nonce + 16, _counter);
       _blockPos = 0;
       _counter++;
-      if (_counter == 0)
-      {
-        memset(_block, 0, kBlockSize);
-      }
     }
     
     UInt32 remaining = kBlockSize - _blockPos;
@@ -339,7 +371,7 @@ Z7_COM7F_IMF(CEncoder::WriteCoderProperties(ISequentialOutStream *outStream))
   if (_key.SaltSize != 0)
   {
     props[1] = (Byte)(
-        ((_key.SaltSize == 0 ? 0 : _key.SaltSize - 1) << 4)
+        ((_key.SaltSize - 1) << 4)
         | nonceLow);
     memcpy(props + 2, _key.Salt, _key.SaltSize);
     propsSize = 2 + _key.SaltSize;

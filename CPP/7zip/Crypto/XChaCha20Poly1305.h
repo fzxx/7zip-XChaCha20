@@ -1,6 +1,4 @@
 // XChaCha20Poly1305.h
-// XChaCha20-Poly1305 AEAD coder for 7z format
-// Reuses XChaCha20 stream cipher + adds Poly1305 MAC authentication
 
 #ifndef ZIP7_INC_CRYPTO_XCHACHA20_POLY1305_H
 #define ZIP7_INC_CRYPTO_XCHACHA20_POLY1305_H
@@ -15,10 +13,8 @@
 namespace NCrypto {
 namespace NXChaCha20Poly1305 {
 
-using NXChaCha20::CBase;
 using NXChaCha20::kNonceSize;
 using NXChaCha20::k_NumCyclesPower_Supported_MAX;
-using N7zKeyDerivation::kKeySize;
 
 const unsigned kTagSize = 16;
 const unsigned kPolyKeySize = 32;
@@ -35,6 +31,8 @@ class CPoly1305
   Byte _aadBlock[16];
   unsigned _aadBlockPos;
   UInt64 _aadLen;
+
+  void PadAndProcessBlock(Byte *buf, unsigned bufPos, UInt64 len);
 public:
   CPoly1305();
   void SetKey(const Byte *key);
@@ -45,12 +43,8 @@ public:
 };
 
 class CBaseCoder:
-  public ICompressFilter,
-  public ICryptoSetPassword,
-  public CMyUnknownImp,
-  public NXChaCha20::CBase
+  public NXChaCha20::CBaseCoder
 {
-  Z7_IFACE_COM7_IMP(ICryptoSetPassword)
   Z7_COM7F_IMP(Init())
 protected:
   virtual ~CBaseCoder()
@@ -59,17 +53,11 @@ protected:
     Z7_memset_0_ARRAY(_aad);
   }
 
-  static const unsigned kBlockSize = 64;
-  Byte _block[kBlockSize];
-  unsigned _blockPos;
-  Byte _derivedKey[kKeySize];
   Byte _polyKey[kPolyKeySize];
-  bool _derivedKeyValid;
   CPoly1305 _poly1305;
   Byte _aad[2 + 16 + kNonceSize];
   unsigned _aadSize;
 
-  void ProcessData(Byte *data, UInt32 size);
   void DeriveKey();
   void ComputePolyKey();
 };
