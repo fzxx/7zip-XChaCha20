@@ -315,7 +315,7 @@ void CBaseCoder::ProcessData(Byte *data, UInt32 size)
     const Byte *blockPtr = _block + _blockPos;
     UInt32 count = toProcess;
     
-#ifdef MY_CPU_64BIT
+#ifdef MY_CPU_LE_UNALIGN_64
     while (count >= 8)
     {
       *(UInt64 *)dataPtr ^= *(const UInt64 *)blockPtr;
@@ -325,6 +325,7 @@ void CBaseCoder::ProcessData(Byte *data, UInt32 size)
     }
 #endif
     
+#ifdef MY_CPU_LE_UNALIGN
     while (count >= 4)
     {
       *(UInt32 *)dataPtr ^= *(const UInt32 *)blockPtr;
@@ -332,6 +333,7 @@ void CBaseCoder::ProcessData(Byte *data, UInt32 size)
       blockPtr += 4;
       count -= 4;
     }
+#endif
     
     while (count--)
       *dataPtr++ ^= *blockPtr++;
