@@ -1731,17 +1731,25 @@ void CCompressDialog::SetEncryptionMethod()
     {
       const NCompression::CFormatOptions &fo = m_RegistryInfo.Formats[index];
       encryptionMethod = fo.EncryptionMethod;
+      encryptionMethod.RemoveChar(L'-');
+      encryptionMethod.RemoveChar(L'+');
+      encryptionMethod.MakeLower_Ascii();
     }
     ComboBox_AddStringAscii(_encryptionMethod, "AES-256");
     ComboBox_AddStringAscii(_encryptionMethod, "XChaCha20");
     ComboBox_AddStringAscii(_encryptionMethod, "XChaCha20-Poly1305");
+    ComboBox_AddStringAscii(_encryptionMethod, "AES+XChaCha20-Poly1305");
+    ComboBox_AddStringAscii(_encryptionMethod, "AES+XChaCha20+Ascon");
     int sel = 0;
-    if (encryptionMethod.IsPrefixedBy_Ascii_NoCase("xchacha20poly1305")
-        || encryptionMethod.IsPrefixedBy_Ascii_NoCase("xchacha20-poly1305"))
+    if (encryptionMethod.IsEqualTo_Ascii_NoCase("xchacha20poly1305"))
       sel = 2;
-    else if (encryptionMethod.IsPrefixedBy_Ascii_NoCase("xchacha"))
+    else if (encryptionMethod.IsEqualTo_Ascii_NoCase("xchacha20"))
       sel = 1;
-    else if (encryptionMethod.IsPrefixedBy_Ascii_NoCase("aes"))
+    else if (encryptionMethod.IsEqualTo_Ascii_NoCase("aesxchacha20poly1305") || encryptionMethod.IsEqualTo_Ascii_NoCase("axp"))
+      sel = 3;
+    else if (encryptionMethod.IsEqualTo_Ascii_NoCase("aesxchacha20ascon") || encryptionMethod.IsEqualTo_Ascii_NoCase("axa"))
+      sel = 4;
+    else if (encryptionMethod.IsEqualTo_Ascii_NoCase("aes256"))
       sel = 0;
     _encryptionMethod.SetCurSel(sel);
     _default_encryptionMethod_Index = 0;

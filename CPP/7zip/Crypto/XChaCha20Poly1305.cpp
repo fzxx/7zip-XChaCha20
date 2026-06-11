@@ -1,4 +1,6 @@
 // XChaCha20Poly1305.cpp
+// Copyright (C) fzxx   Contributor: https://github.com/fzxx
+// License: GNU LGPL v2.1+
 
 #include "StdAfx.h"
 
@@ -322,11 +324,6 @@ static void Poly1305_ProcessBlock_SSE2_4Way(Byte h[16], const Byte r[16], const 
   Poly1305_ReduceAndPack(h, m);
 }
 
-static void Poly1305_ProcessBlock_SSE2(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
-{
-  Poly1305_ProcessBlock_SSE2_4Way(h, r, block, hasHighBit);
-}
-
 #endif
 
 #if !defined(MY_CPU_X86_OR_AMD64) || !defined(MY_CPU_SSE2)
@@ -379,31 +376,29 @@ static void Poly1305_ProcessBlock(Byte h[16], const Byte r[16], const Byte block
 static void Poly1305_ProcessBlock(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
 {
 #if defined(MY_CPU_X86_OR_AMD64) && defined(MY_CPU_SSE2)
-  Poly1305_ProcessBlock_SSE2(h, r, block, hasHighBit);
+  Poly1305_ProcessBlock_SSE2_4Way(h, r, block, hasHighBit);
 #else
   Poly1305_ProcessBlock_32(h, r, block, hasHighBit);
 #endif
 }
 #endif
 
-void CPoly1305::Update(const Byte *data, UInt32 size)
+void CPoly1305::ProcessBlocks(Byte *buf, unsigned &bufPos, UInt64 &len, const Byte *data, UInt32 size)
 {
-  if (_finalized)
-    return;
-  _totalLen += size;
+  len += size;
 
-  if (_blockPos > 0)
+  if (bufPos > 0)
   {
-    unsigned n = 16 - _blockPos;
+    unsigned n = 16 - bufPos;
     if (n > size) n = size;
-    memcpy(_block + _blockPos, data, n);
-    _blockPos += n;
+    memcpy(buf + bufPos, data, n);
+    bufPos += n;
     data += n;
     size -= n;
-    if (_blockPos == 16)
+    if (bufPos == 16)
     {
-      Poly1305_ProcessBlock(_h, _r, _block, true);
-      _blockPos = 0;
+      Poly1305_ProcessBlock(_h, _r, buf, true);
+      bufPos = 0;
     }
   }
 
@@ -416,44 +411,21 @@ void CPoly1305::Update(const Byte *data, UInt32 size)
 
   if (size > 0)
   {
-    memcpy(_block, data, size);
-    _blockPos = size;
+    memcpy(buf, data, size);
+    bufPos = size;
   }
+}
+
+void CPoly1305::Update(const Byte *data, UInt32 size)
+{
+  if (_finalized) return;
+  ProcessBlocks(_block, _blockPos, _totalLen, data, size);
 }
 
 void CPoly1305::UpdateAad(const Byte *data, UInt32 size)
 {
-  if (_finalized)
-    return;
-  _aadLen += size;
-
-  if (_aadBlockPos > 0)
-  {
-    unsigned n = 16 - _aadBlockPos;
-    if (n > size) n = size;
-    memcpy(_aadBlock + _aadBlockPos, data, n);
-    _aadBlockPos += n;
-    data += n;
-    size -= n;
-    if (_aadBlockPos == 16)
-    {
-      Poly1305_ProcessBlock(_h, _r, _aadBlock, true);
-      _aadBlockPos = 0;
-    }
-  }
-
-  while (size >= 16)
-  {
-    Poly1305_ProcessBlock(_h, _r, data, true);
-    data += 16;
-    size -= 16;
-  }
-
-  if (size > 0)
-  {
-    memcpy(_aadBlock, data, size);
-    _aadBlockPos = size;
-  }
+  if (_finalized) return;
+  ProcessBlocks(_aadBlock, _aadBlockPos, _aadLen, data, size);
 }
 
 void CPoly1305::PadAndProcessBlock(Byte *buf, unsigned bufPos, UInt64 len)
@@ -747,4 +719,4 @@ Z7_COM7F_IMF(CDecoder::CryptoAuthVerify(Int32 *result))
   return S_OK;
 }
 
-}} // namespace NCrypto::NXChaCha20Poly1305
+}}

@@ -1,4 +1,6 @@
 // XChaCha20Poly1305Register.cpp
+// Copyright (C) fzxx   Contributor: https://github.com/fzxx
+// License: GNU LGPL v2.1+
 
 #include "StdAfx.h"
 

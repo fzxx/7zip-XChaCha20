@@ -1,4 +1,6 @@
 // XChaCha20Poly1305.h
+// Copyright (C) fzxx   Contributor: https://github.com/fzxx
+// License: GNU LGPL v2.1+
 
 #ifndef ZIP7_INC_CRYPTO_XCHACHA20_POLY1305_H
 #define ZIP7_INC_CRYPTO_XCHACHA20_POLY1305_H
@@ -33,6 +35,7 @@ class CPoly1305
   UInt64 _aadLen;
 
   void PadAndProcessBlock(Byte *buf, unsigned bufPos, UInt64 len);
+  void ProcessBlocks(Byte *buf, unsigned &bufPos, UInt64 &len, const Byte *data, UInt32 size);
 public:
   CPoly1305();
   void SetKey(const Byte *key);

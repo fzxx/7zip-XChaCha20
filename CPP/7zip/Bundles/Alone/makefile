@@ -188,9 +188,11 @@ CRYPTO_OBJS = \
   $O\7zAesRegister.obj \
   $O\7zKeyDerivation.obj \
   $O\HmacSha1.obj \
+  $O\HmacSha512.obj \
   $O\MyAes.obj \
   $O\MyAesReg.obj \
   $O\Pbkdf2HmacSha1.obj \
+  $O\Pbkdf2HmacSha512.obj \
   $O\RandGen.obj \
   $O\WzAes.obj \
   $O\ZipCrypto.obj \
@@ -241,6 +243,7 @@ C_OBJS = \
 !include "../../LzmaDec.mak"
 !include "../../Sha1.mak"
 !include "../../Sha256.mak"
+!include "../../Sha512.mak"
 !include "../../Sort.mak"
 
 !include "../../7zip.mak"

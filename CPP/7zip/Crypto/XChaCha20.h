@@ -1,4 +1,6 @@
 // XChaCha20.h
+// Copyright (C) fzxx   Contributor: https://github.com/fzxx
+// License: GNU LGPL v2.1+
 
 #ifndef ZIP7_INC_CRYPTO_XCHACHA20_H
 #define ZIP7_INC_CRYPTO_XCHACHA20_H

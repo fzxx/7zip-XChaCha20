@@ -11,7 +11,19 @@ namespace NCrypto {
 namespace N7zKeyDerivation {
 
 const unsigned kKeySize = 32;
-const unsigned kSaltSizeMax = 16;
+const unsigned kSaltSizeMax = 32;
+
+// for cascade mode
+const unsigned kCascadeKeySize = 96;
+
+// random salt for cascade mode
+const unsigned kCascadeSaltSize = 32;
+
+enum EDerivationMode
+{
+  kDeriv_Single = 0,    // SHA-256 iterative
+  kDeriv_Cascade = 1    // PBKDF2-HMAC-SHA512
+};
 
 class CKeyInfo
 {
@@ -21,6 +33,8 @@ public:
   Byte Salt[kSaltSizeMax];
   CByteBuffer Password;
   Byte Key[kKeySize];
+  EDerivationMode DerivMode;
+  Byte CascadeKey[kCascadeKeySize];
 
   bool IsEqualTo(const CKeyInfo &a) const;
   void CalcKey();
@@ -30,6 +44,7 @@ public:
   {
     NumCyclesPower = 0;
     SaltSize = 0;
+    DerivMode = kDeriv_Single;
     for (unsigned i = 0; i < sizeof(Salt); i++)
       Salt[i] = 0;
   }
@@ -41,6 +56,7 @@ public:
     SaltSize = 0;
     Z7_memset_0_ARRAY(Salt);
     Z7_memset_0_ARRAY(Key);
+    Z7_memset_0_ARRAY(CascadeKey);
   }
 
 #ifdef Z7_CPP_IS_SUPPORTED_default

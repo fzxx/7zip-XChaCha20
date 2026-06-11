@@ -9,6 +9,7 @@
 #include "../../Common/MyBuffer2.h"
 
 #include "7zKeyDerivation.h"
+#include "Pbkdf2HmacSha512.h"
 
 namespace NCrypto {
 namespace N7zKeyDerivation {
@@ -23,6 +24,8 @@ static bool ConstantTimeCompare(const Byte *a, const Byte *b, size_t size)
 
 bool CKeyInfo::IsEqualTo(const CKeyInfo &a) const
 {
+  if (DerivMode != a.DerivMode)
+    return false;
   if (SaltSize != a.SaltSize || NumCyclesPower != a.NumCyclesPower)
     return false;
   if (!ConstantTimeCompare(Salt, a.Salt, SaltSize))
@@ -34,7 +37,18 @@ bool CKeyInfo::IsEqualTo(const CKeyInfo &a) const
 
 void CKeyInfo::CalcKey()
 {
-  if (NumCyclesPower == 0x3F)
+  if (DerivMode == kDeriv_Cascade)
+  {
+    // PBKDF2-HMAC-SHA512, output 96 bytes
+    const UInt32 numIterations = (NumCyclesPower == 0x3F) ?
+        1 : (UInt32)1 << NumCyclesPower;
+    NSha512::Pbkdf2Hmac(
+        Password, Password.Size(),
+        Salt, SaltSize,
+        numIterations,
+        CascadeKey, kCascadeKeySize);
+  }
+  else if (NumCyclesPower == 0x3F)
   {
     unsigned pos;
     for (pos = 0; pos < SaltSize; pos++)
@@ -101,8 +115,10 @@ bool CKeyInfoCache::GetKey(CKeyInfo &key)
     const CKeyInfo &cached = Keys[i];
     if (key.IsEqualTo(cached))
     {
-      for (unsigned j = 0; j < kKeySize; j++)
-        key.Key[j] = cached.Key[j];
+      if (cached.DerivMode == kDeriv_Cascade)
+        memcpy(key.CascadeKey, cached.CascadeKey, kCascadeKeySize);
+      else
+        memcpy(key.Key, cached.Key, kKeySize);
       if (i != 0)
         Keys.MoveToFront(i);
       return true;

@@ -1030,13 +1030,20 @@ HRESULT COutHandler::SetProperty(const wchar_t *nameSpec, const PROPVARIANT &val
     {
       if (value.vt != VT_BSTR)
         return E_INVALIDARG;
-      const wchar_t *m = value.bstrVal;
-      if (StringsAreEqualNoCase_Ascii(m, "AES256") || StringsAreEqualNoCase_Ascii(m, "AES-256"))
+      UString m = value.bstrVal;
+      m.RemoveChar(L'-');
+      m.RemoveChar(L'+');
+      m.MakeLower_Ascii();
+      if (m.IsEqualTo("aes256"))
         _encryptionMethodId = k_AES;
-      else if (StringsAreEqualNoCase_Ascii(m, "XChaCha20"))
+      else if (m.IsEqualTo("xchacha20"))
         _encryptionMethodId = k_XCHACHA20;
-      else if (StringsAreEqualNoCase_Ascii(m, "XChaCha20Poly1305") || StringsAreEqualNoCase_Ascii(m, "XChaCha20-Poly1305"))
+      else if (m.IsEqualTo("xchacha20poly1305"))
         _encryptionMethodId = k_XCHACHA20_POLY1305;
+      else if (m.IsEqualTo("axa") || m.IsEqualTo("aesxchacha20ascon"))
+        _encryptionMethodId = k_AES_XCHACHA20_ASCON;
+      else if (m.IsEqualTo("axp") || m.IsEqualTo("aesxchacha20poly1305"))
+        _encryptionMethodId = k_AES_XCHACHA20_POLY1305;
       else
         return E_INVALIDARG;
       return S_OK;

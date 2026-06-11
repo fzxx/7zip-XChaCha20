@@ -1,5 +1,6 @@
 // ChaCha20Simd.h
-// Shared SIMD (SSE2/AVX2/NEON) acceleration code for ChaCha20/XChaCha20
+// Copyright (C) fzxx   Contributor: https://github.com/fzxx
+// License: GNU LGPL v2.1+
 
 #ifndef ZIP7_CRYPTO_CHACHA20_SIMD_H
 #define ZIP7_CRYPTO_CHACHA20_SIMD_H

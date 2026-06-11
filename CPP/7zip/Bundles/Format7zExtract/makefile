@@ -88,6 +88,8 @@ CRYPTO_OBJS = \
   $O\7zAes.obj \
   $O\7zAesRegister.obj \
   $O\7zKeyDerivation.obj \
+  $O\HmacSha512.obj \
+  $O\Pbkdf2HmacSha512.obj \
   $O\MyAes.obj \
   $O\MyAesReg.obj \
 
@@ -113,5 +115,6 @@ C_OBJS = \
 !include "../../Crc.mak"
 !include "../../LzmaDec.mak"
 !include "../../Sha256.mak"
+!include "../../Sha512.mak"
 
 !include "../../7zip.mak"

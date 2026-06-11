@@ -1,4 +1,6 @@
 // XChaCha20.cpp
+// Copyright (C) fzxx   Contributor: https://github.com/fzxx
+// License: GNU LGPL v2.1+
 
 #include "StdAfx.h"
 
@@ -77,6 +79,16 @@ void CBase::PrepareKey()
     g_GlobalKeyCache.FindAndAdd(_key);
 }
 
+#define DOUBLE_ROUND \
+  QUARTERROUND(x0, x4, x8,  x12) \
+  QUARTERROUND(x1, x5, x9,  x13) \
+  QUARTERROUND(x2, x6, x10, x14) \
+  QUARTERROUND(x3, x7, x11, x15) \
+  QUARTERROUND(x0, x5, x10, x15) \
+  QUARTERROUND(x1, x6, x11, x12) \
+  QUARTERROUND(x2, x7, x8,  x13) \
+  QUARTERROUND(x3, x4, x9,  x14)
+
 void XHChaCha20Block_Core(Byte *output, const Byte *key, const Byte *nonce)
 {
   UInt32 x0, x1, x2, x3, x4, x5, x6, x7;
@@ -101,19 +113,7 @@ void XHChaCha20Block_Core(Byte *output, const Byte *key, const Byte *nonce)
   x14 = GetUi32(nonce + 8);
   x15 = GetUi32(nonce + 12);
   
-#define DOUBLE_ROUND \
-  QUARTERROUND(x0, x4, x8,  x12) \
-  QUARTERROUND(x1, x5, x9,  x13) \
-  QUARTERROUND(x2, x6, x10, x14) \
-  QUARTERROUND(x3, x7, x11, x15) \
-  QUARTERROUND(x0, x5, x10, x15) \
-  QUARTERROUND(x1, x6, x11, x12) \
-  QUARTERROUND(x2, x7, x8,  x13) \
-  QUARTERROUND(x3, x4, x9,  x14)
-  
   CHACHA20_10_DOUBLE_ROUNDS
-
-#undef DOUBLE_ROUND
 
   SetUi32(output, x0);
   SetUi32(output + 4, x1);
@@ -149,19 +149,7 @@ void XChaCha20Block_Core(Byte *output, const Byte *key, const Byte *nonce, UInt6
   x14 = GetUi32(nonce);
   x15 = GetUi32(nonce + 4);
   
-#define DOUBLE_ROUND \
-  QUARTERROUND(x0, x4, x8,  x12) \
-  QUARTERROUND(x1, x5, x9,  x13) \
-  QUARTERROUND(x2, x6, x10, x14) \
-  QUARTERROUND(x3, x7, x11, x15) \
-  QUARTERROUND(x0, x5, x10, x15) \
-  QUARTERROUND(x1, x6, x11, x12) \
-  QUARTERROUND(x2, x7, x8,  x13) \
-  QUARTERROUND(x3, x4, x9,  x14)
-  
   CHACHA20_10_DOUBLE_ROUNDS
-
-#undef DOUBLE_ROUND
 
   x0 += GetUi32(kSigma);
   x1 += GetUi32(kSigma + 4);
@@ -195,8 +183,10 @@ void XChaCha20Block_Core(Byte *output, const Byte *key, const Byte *nonce, UInt6
   SetUi32(output + 48, x12)
   SetUi32(output + 52, x13)
   SetUi32(output + 56, x14)
-  SetUi32(output + 60, x15)
+  SetUi32(output + 60, x15);
 }
+
+#undef DOUBLE_ROUND
 
 void CBaseCoder::ProcessData(Byte *data, UInt32 size)
 {
