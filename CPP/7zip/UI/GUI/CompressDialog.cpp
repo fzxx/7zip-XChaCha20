@@ -1839,6 +1839,7 @@ UString CCompressDialog::GetEncryptionMethodSpec()
   {
     _encryptionMethod.GetText(s);
     s.RemoveChar(L'-');
+    s.RemoveChar(L'+');
   }
   return s;
 }

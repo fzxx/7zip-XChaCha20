@@ -141,6 +141,7 @@ void AsconP12(UInt64 state[5])
 void AsconP8(UInt64 state[5])
 {
 #ifdef MY_CPU_AMD64
+  InitSIMD();
   if (g_AVX512Enabled)
   {
     UInt64 st[8] = { state[0], state[1], state[2], state[3], state[4] };
