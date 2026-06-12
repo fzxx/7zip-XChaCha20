@@ -95,7 +95,7 @@ void CKeyInfo::CalcKey()
         r += numUnroll;
         do
         {
-          SetUi32(dest, i)  i++; dest += bufSize;
+          SetUi32(dest, i);  i++; dest += bufSize;
         }
         while (i < r);
         Sha256_Update((CSha256 *)(void *)(Byte *)sha, buf, unrollSize);
