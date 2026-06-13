@@ -16,9 +16,16 @@ namespace N7zKeyDerivation {
 
 static bool ConstantTimeCompare(const Byte *a, const Byte *b, size_t size)
 {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4746)
+#endif
   volatile Byte result = 0;
   for (size_t i = 0; i < size; i++)
     result |= a[i] ^ b[i];
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
   return result == 0;
 }
 

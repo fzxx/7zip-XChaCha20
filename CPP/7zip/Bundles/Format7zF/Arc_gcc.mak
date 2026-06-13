@@ -312,6 +312,10 @@ CRYPTO_OBJS = \
   $O/Pbkdf2HmacSha512.o \
   $O/RandGen.o \
   $O/WzAes.o \
+  $O/XChaCha20.o \
+  $O/XChaCha20Poly1305.o \
+  $O/XChaCha20Poly1305Register.o \
+  $O/XChaCha20Register.o \
   $O/ZipCrypto.o \
   $O/ZipStrong.o \
 

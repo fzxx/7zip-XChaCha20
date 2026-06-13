@@ -222,14 +222,20 @@ Z7_NO_INLINE void ChaCha20_OperateKeystream_SSE2(
 
 #ifdef MY_CPU_AMD64
 
+#if defined(__GNUC__) || defined(__clang__)
+#define Z7_AVX2_TARGET_ATTR __attribute__((target("avx2")))
+#else
+#define Z7_AVX2_TARGET_ATTR
+#endif
+
 template <unsigned int R>
-Z7_FORCE_INLINE __m256i RotateLeft_AVX2(const __m256i val)
+Z7_AVX2_TARGET_ATTR Z7_FORCE_INLINE __m256i RotateLeft_AVX2(const __m256i val)
 {
   return _mm256_or_si256(_mm256_slli_epi32(val, R), _mm256_srli_epi32(val, 32 - R));
 }
 
 template <>
-Z7_FORCE_INLINE __m256i RotateLeft_AVX2<8>(const __m256i val)
+Z7_AVX2_TARGET_ATTR Z7_FORCE_INLINE __m256i RotateLeft_AVX2<8>(const __m256i val)
 {
   const __m256i mask = _mm256_set_epi8(
     14,13,12,15, 10,9,8,11, 6,5,4,7, 2,1,0,3,
@@ -238,7 +244,7 @@ Z7_FORCE_INLINE __m256i RotateLeft_AVX2<8>(const __m256i val)
 }
 
 template <>
-Z7_FORCE_INLINE __m256i RotateLeft_AVX2<16>(const __m256i val)
+Z7_AVX2_TARGET_ATTR Z7_FORCE_INLINE __m256i RotateLeft_AVX2<16>(const __m256i val)
 {
   const __m256i mask = _mm256_set_epi8(
     13,12,15,14, 9,8,11,10, 5,4,7,6, 1,0,3,2,
@@ -260,7 +266,7 @@ Z7_FORCE_INLINE __m256i RotateLeft_AVX2<16>(const __m256i val)
   b = _mm256_xor_si256(b, c); \
   b = RotateLeft_AVX2<7>(b);
 
-Z7_NO_INLINE void ChaCha20_OperateKeystream_AVX2(
+Z7_AVX2_TARGET_ATTR Z7_NO_INLINE void ChaCha20_OperateKeystream_AVX2(
     const UInt32 *state,
     const Byte *input,
     Byte *output)
@@ -481,8 +487,10 @@ Z7_NO_INLINE void ChaCha20_OperateKeystream_AVX2(
 }
 
 static bool g_SSE2Enabled = false;
-static bool g_AVX2Enabled = false;
 static bool g_SIMDInitialized = false;
+#ifdef MY_CPU_AMD64
+static bool g_AVX2Enabled = false;
+#endif
 
 static void InitSIMD()
 {
@@ -513,7 +521,8 @@ Z7_FORCE_INLINE uint32x4_t RotateLeft_NEON(const uint32x4_t val)
 template <>
 Z7_FORCE_INLINE uint32x4_t RotateLeft_NEON<8>(const uint32x4_t val)
 {
-  const uint8x16_t mask = {3,0,1,2, 7,4,5,6, 11,8,9,10, 15,12,13,14};
+  static const uint8_t kMaskRot8[16] = {3,0,1,2, 7,4,5,6, 11,8,9,10, 15,12,13,14};
+  const uint8x16_t mask = vld1q_u8(kMaskRot8);
   return vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(val), mask));
 }
 

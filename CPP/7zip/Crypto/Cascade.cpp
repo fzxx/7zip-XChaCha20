@@ -458,11 +458,18 @@ Z7_COM7F_IMF(CAXPDecoder::CryptoAuthVerify(Int32 *result))
   _finalized = true;
 
   {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4746)
+#endif
     volatile Byte diff = 0;
     for (unsigned i = 0; i < kTagSize; i++)
       diff |= computedTag[i] ^ _expectedTag[i];
     *result = (diff == 0) ? 0 : 1;
     _authOk = (diff == 0);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
   }
 
   Z7_memset_0_ARRAY(computedTag);
@@ -664,6 +671,7 @@ void CBaseCoder::ProcessEnc(Byte *data, UInt32 size)
   const bool useSSE2 = ASCON_USE_SSE2;
 #else
   const bool useSSE2 = false;
+  (void)useSSE2;
 #endif
   if (!_keyDerived)
   {
@@ -743,6 +751,7 @@ void CBaseCoder::ProcessDec(Byte *data, UInt32 size)
   const bool useSSE2 = ASCON_USE_SSE2;
 #else
   const bool useSSE2 = false;
+  (void)useSSE2;
 #endif
   if (!_keyDerived)
   {
@@ -1188,11 +1197,18 @@ Z7_COM7F_IMF(CDecoder::CryptoAuthVerify(Int32 *result))
   Finalize(computedTag);
 
   {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4746)
+#endif
     volatile Byte diff = 0;
     for (unsigned i = 0; i < NAscon::kTagSize; i++)
       diff |= computedTag[i] ^ _expectedTag[i];
     *result = (diff == 0) ? 0 : 1;
     _authOk = (diff == 0);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
   }
 
   Z7_memset_0_ARRAY(computedTag);

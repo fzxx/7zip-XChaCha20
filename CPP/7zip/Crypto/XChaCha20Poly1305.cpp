@@ -20,6 +20,14 @@
 #include "RandGen.h"
 #endif
 
+#if defined(MY_CPU_AMD64)
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
+#endif
+
 namespace NCrypto {
 namespace NXChaCha20Poly1305 {
 
@@ -65,14 +73,28 @@ void CPoly1305::SetKey(const Byte *key)
   memcpy(_s, key + 16, 16);
 }
 
-#if defined(__SIZEOF_INT128__) && (__SIZEOF_INT128__ >= 16)
-  #define Z7_POLY1305_128BIT
-#elif defined(_M_AMD64)
-  #include <intrin.h>
+#if defined(MY_CPU_AMD64)
   #define Z7_POLY1305_128BIT
 #endif
 
 #ifdef Z7_POLY1305_128BIT
+
+#if defined(MY_CPU_AMD64) && !defined(_MSC_VER)
+/* GCC/Clang fallback for _umul128 */
+static inline UInt64 Z7_umul128(UInt64 a, UInt64 b, UInt64 *hi)
+{
+  unsigned __int128 p = (unsigned __int128)a * b;
+  *hi = (UInt64)(p >> 64);
+  return (UInt64)p;
+}
+#define _umul128 Z7_umul128
+/* GCC/Clang: _addcarry_u64 uses unsigned long long, cast UInt64* to match */
+#define Z7_ADDCARRY_U64(c, x, y, out) \
+  _addcarry_u64((c), (unsigned long long)(x), (unsigned long long)(y), (unsigned long long *)(out))
+#elif defined(_MSC_VER)
+#define Z7_ADDCARRY_U64(c, x, y, out) _addcarry_u64((c), (x), (y), (out))
+#endif
+
 static void Poly1305_ProcessBlock_128(Byte h[16], const Byte r[16], const Byte block[16], bool hasHighBit)
 {
   UInt64 d0 = GetUi32(h);
@@ -91,59 +113,15 @@ static void Poly1305_ProcessBlock_128(Byte h[16], const Byte r[16], const Byte b
   UInt64 r0 = GetUi64(r);
   UInt64 r1 = GetUi64(r + 8);
 
-#if defined(__SIZEOF_INT128__) && (__SIZEOF_INT128__ >= 16)
-  typedef unsigned __int128 U128;
-
-  U128 hv = (U128)m0 | ((U128)m1 << 26) | ((U128)m2 << 52) | ((U128)m3 << 78) | ((U128)m4 << 104);
-  U128 msg = (U128)msg_lo | ((U128)msg_hi << 64);
-  if (hasHighBit)
-    msg |= (U128)1 << 128;
-  hv += msg;
-
-  U128 rv = (U128)r0 | ((U128)r1 << 64);
-
-  U128 product = hv * rv;
-
-  UInt64 a0 = (UInt64)product;
-  UInt64 a1 = (UInt64)(product >> 64);
-  UInt64 a2 = (UInt64)(product >> 128);
-  UInt64 a3 = (UInt64)(product >> 192);
-
-  U128 p_lo = (U128)a0 | ((U128)a1 << 64) | ((U128)(a2 & 3) << 128);
-  U128 p_hi = (a2 >> 2) | ((U128)a3 << 62);
-
-  U128 res = p_lo + p_hi * 5;
-
-  U128 overflow = res >> 130;
-  while (overflow)
-  {
-    res = (res & (((U128)1 << 130) - 1)) + overflow * 5;
-    overflow = res >> 130;
-  }
-
-  UInt64 lo = (UInt64)res;
-  UInt64 hi = (UInt64)(res >> 64);
-  UInt32 top = (UInt32)(res >> 128);
-
-  UInt64 limb0 = lo & 0x3FFFFFF;
-  UInt64 limb1 = (lo >> 26) & 0x3FFFFFF;
-  UInt64 limb2 = ((lo >> 52) | ((hi & 0x3FFF) << 12)) & 0x3FFFFFF;
-  UInt64 limb3 = (hi >> 14) & 0x3FFFFFF;
-  UInt64 limb4 = ((hi >> 40) | ((UInt64)top << 24)) & 0x3FFFFFF;
-
-  SetUi32(h, (UInt32)(limb0 | (limb1 << 26)));
-  SetUi32(h + 4, (UInt32)((limb1 >> 6) | (limb2 << 20)));
-  SetUi32(h + 8, (UInt32)((limb2 >> 12) | (limb3 << 14)));
-  SetUi32(h + 12, (UInt32)((limb3 >> 18) | (limb4 << 8)));
-#elif defined(_M_AMD64)
+#if defined(MY_CPU_AMD64)
   {
     UInt64 hv0 = m0 | (m1 << 26) | ((m2 & 0xFFF) << 52);
     UInt64 hv1 = (m2 >> 12) | (m3 << 14) | (m4 << 40);
     UInt64 hv2 = 0;
 
     unsigned char c;
-    c = _addcarry_u64(0, hv0, msg_lo, &hv0);
-    c = _addcarry_u64(c, hv1, msg_hi, &hv1);
+    c = Z7_ADDCARRY_U64(0, hv0, msg_lo, &hv0);
+    c = Z7_ADDCARRY_U64(c, hv1, msg_hi, &hv1);
     hv2 += c + (hasHighBit ? 1 : 0);
 
     UInt64 d0_hi, d0_lo = _umul128(hv0, r0, &d0_hi);
@@ -154,19 +132,19 @@ static void Poly1305_ProcessBlock_128(Byte h[16], const Byte r[16], const Byte b
     UInt64 d3_hi, d3_lo = _umul128(hv2, r1, &d3_hi);
 
     UInt64 a0 = d0_lo, a1 = d0_hi, a2 = 0, a3 = 0;
-    c = _addcarry_u64(0, a1, d1a_lo, &a1);
-    c = _addcarry_u64(c, a2, d1a_hi, &a2);
-    c = _addcarry_u64(c, a3, 0, &a3);
-    c = _addcarry_u64(0, a1, d1b_lo, &a1);
-    c = _addcarry_u64(c, a2, d1b_hi, &a2);
-    c = _addcarry_u64(c, a3, 0, &a3);
-    c = _addcarry_u64(0, a2, d2a_lo, &a2);
-    c = _addcarry_u64(c, a3, d2a_hi, &a3);
-    c = _addcarry_u64(0, a2, d2b_lo, &a2);
-    c = _addcarry_u64(c, a3, d2b_hi, &a3);
+    c = Z7_ADDCARRY_U64(0, a1, d1a_lo, &a1);
+    c = Z7_ADDCARRY_U64(c, a2, d1a_hi, &a2);
+    c = Z7_ADDCARRY_U64(c, a3, 0, &a3);
+    c = Z7_ADDCARRY_U64(0, a1, d1b_lo, &a1);
+    c = Z7_ADDCARRY_U64(c, a2, d1b_hi, &a2);
+    c = Z7_ADDCARRY_U64(c, a3, 0, &a3);
+    c = Z7_ADDCARRY_U64(0, a2, d2a_lo, &a2);
+    c = Z7_ADDCARRY_U64(c, a3, d2a_hi, &a3);
+    c = Z7_ADDCARRY_U64(0, a2, d2b_lo, &a2);
+    c = Z7_ADDCARRY_U64(c, a3, d2b_hi, &a3);
     UInt64 a4 = c;
-    c = _addcarry_u64(0, a3, d3_lo, &a3);
-    c = _addcarry_u64(c, a4, d3_hi, &a4);
+    c = Z7_ADDCARRY_U64(0, a3, d3_lo, &a3);
+    c = Z7_ADDCARRY_U64(c, a4, d3_hi, &a4);
 
     UInt64 hi[3];
     hi[0] = (a2 >> 2) | (a3 << 62);
@@ -178,14 +156,14 @@ static void Poly1305_ProcessBlock_128(Byte h[16], const Byte r[16], const Byte b
     UInt64 h5_2 = hi[2] * 5;
 
     UInt64 lo0 = a0, lo1 = a1, lo2 = a2 & 3, lo3 = 0;
-    c = _addcarry_u64(0, lo0, h5_0, &lo0);
-    c = _addcarry_u64(c, lo1, h5_0_hi, &lo1);
-    c = _addcarry_u64(c, lo2, 0, &lo2);
-    c = _addcarry_u64(0, lo1, h5_1, &lo1);
-    c = _addcarry_u64(c, lo2, h5_1_hi, &lo2);
-    c = _addcarry_u64(c, lo3, 0, &lo3);
-    c = _addcarry_u64(0, lo2, h5_2, &lo2);
-    c = _addcarry_u64(c, lo3, 0, &lo3);
+    c = Z7_ADDCARRY_U64(0, lo0, h5_0, &lo0);
+    c = Z7_ADDCARRY_U64(c, lo1, h5_0_hi, &lo1);
+    c = Z7_ADDCARRY_U64(c, lo2, 0, &lo2);
+    c = Z7_ADDCARRY_U64(0, lo1, h5_1, &lo1);
+    c = Z7_ADDCARRY_U64(c, lo2, h5_1_hi, &lo2);
+    c = Z7_ADDCARRY_U64(c, lo3, 0, &lo3);
+    c = Z7_ADDCARRY_U64(0, lo2, h5_2, &lo2);
+    c = Z7_ADDCARRY_U64(c, lo3, 0, &lo3);
 
     UInt64 ov0 = lo2 >> 2;
     lo2 &= 3;
@@ -193,18 +171,18 @@ static void Poly1305_ProcessBlock_128(Byte h[16], const Byte r[16], const Byte b
 
     UInt64 ov5_lo, ov5_hi;
     ov5_lo = _umul128(ov0, 5, &ov5_hi);
-    c = _addcarry_u64(0, lo0, ov5_lo, &lo0);
-    c = _addcarry_u64(c, lo1, ov5_hi, &lo1);
-    c = _addcarry_u64(c, lo2, 0, &lo2);
+    c = Z7_ADDCARRY_U64(0, lo0, ov5_lo, &lo0);
+    c = Z7_ADDCARRY_U64(c, lo1, ov5_hi, &lo1);
+    c = Z7_ADDCARRY_U64(c, lo2, 0, &lo2);
 
     ov0 = lo2 >> 2;
     if (ov0)
     {
       lo2 &= 3;
       ov5_lo = _umul128(ov0, 5, &ov5_hi);
-      c = _addcarry_u64(0, lo0, ov5_lo, &lo0);
-      c = _addcarry_u64(c, lo1, ov5_hi, &lo1);
-      c = _addcarry_u64(c, lo2, 0, &lo2);
+      c = Z7_ADDCARRY_U64(0, lo0, ov5_lo, &lo0);
+      c = Z7_ADDCARRY_U64(c, lo1, ov5_hi, &lo1);
+      c = Z7_ADDCARRY_U64(c, lo2, 0, &lo2);
     }
 
     UInt64 limb0 = lo0 & 0x3FFFFFF;
@@ -708,10 +686,17 @@ Z7_COM7F_IMF(CDecoder::CryptoAuthVerify(Int32 *result))
   _poly1305.Final(computedTag);
 
   {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4746)
+#endif
     volatile Byte diff = 0;
     for (unsigned i = 0; i < kTagSize; i++)
       diff |= computedTag[i] ^ _expectedTag[i];
     _authResult = (diff == 0) ? 0 : 1;
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
   }
   *result = _authResult;
 

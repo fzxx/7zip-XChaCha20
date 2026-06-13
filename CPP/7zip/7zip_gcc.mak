@@ -865,6 +865,14 @@ $O/ZipCrypto.o: ../../Crypto/ZipCrypto.cpp
 	$(CXX) $(CXXFLAGS) $<
 $O/ZipStrong.o: ../../Crypto/ZipStrong.cpp
 	$(CXX) $(CXXFLAGS) $<
+$O/XChaCha20.o: ../../Crypto/XChaCha20.cpp
+	$(CXX) $(CXXFLAGS) $<
+$O/XChaCha20Register.o: ../../Crypto/XChaCha20Register.cpp
+	$(CXX) $(CXXFLAGS) $<
+$O/XChaCha20Poly1305.o: ../../Crypto/XChaCha20Poly1305.cpp
+	$(CXX) $(CXXFLAGS) $<
+$O/XChaCha20Poly1305Register.o: ../../Crypto/XChaCha20Poly1305Register.cpp
+	$(CXX) $(CXXFLAGS) $<
 
 
 
