@@ -590,6 +590,7 @@ HRESULT CDecoder::Decode(
 
     if (codeResult == S_OK)
     {
+      #ifndef Z7_NO_CRYPTO
       for (i = 0; i < folderInfo.Coders.Size(); i++)
       {
         Z7_DECL_CMyComPtr_QI_FROM(
@@ -603,6 +604,7 @@ HRESULT CDecoder::Decode(
             return E_FAIL;
         }
       }
+      #endif
     }
     return codeResult;
   }
