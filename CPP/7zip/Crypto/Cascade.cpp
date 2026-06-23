@@ -516,6 +516,12 @@ static CKeyInfoCache g_GlobalKeyCache(32);
 #define ASCON_USE_SSE2 false
 #endif
 
+#ifdef MY_CPU_ARM_OR_ARM64
+#define ASCON_USE_NEON (NAscon::g_NEONEnabled)
+#else
+#define ASCON_USE_NEON false
+#endif
+
 CBase::CBase():
   _cachedKeys(16),
   _keyDerived(false),
@@ -680,6 +686,13 @@ void CBaseCoder::ProcessEnc(Byte *data, UInt32 size)
   const bool useSSE2 = false;
   (void)useSSE2;
 #endif
+#ifdef MY_CPU_ARM_OR_ARM64
+  NAscon::InitSIMD();
+  const bool useNEON = ASCON_USE_NEON;
+#else
+  const bool useNEON = false;
+  (void)useNEON;
+#endif
   if (!_keyDerived)
   {
     DeriveCascadeKeys();
@@ -699,6 +712,9 @@ void CBaseCoder::ProcessEnc(Byte *data, UInt32 size)
 
     XorBytes(p, _stateBuf + _stateBufPos, toProcess);
     memcpy(_stateBuf + _stateBufPos, p, toProcess);
+    // 同步_stateBuf到_state，确保Finalize使用正确的状态计算Tag
+    // 与ProcessDec保持一致（参考ProcessDec第809行）
+    memcpy((Byte *)_state + _stateBufPos, _stateBuf + _stateBufPos, toProcess);
 
     _stateBufPos += toProcess;
     p += toProcess;
@@ -720,6 +736,18 @@ void CBaseCoder::ProcessEnc(Byte *data, UInt32 size)
     {
       do {
         NAscon::AsconEncBlock_SSE2(_state, p);
+        NAscon::AsconP8(_state);
+        p += NAscon::kRateSize;
+        remaining -= NAscon::kRateSize;
+      } while (remaining >= NAscon::kRateSize);
+    }
+    else
+#endif
+#ifdef MY_CPU_ARM_OR_ARM64
+    if (useNEON)
+    {
+      do {
+        NAscon::AsconEncBlock_NEON(_state, p);
         NAscon::AsconP8(_state);
         p += NAscon::kRateSize;
         remaining -= NAscon::kRateSize;
@@ -759,6 +787,13 @@ void CBaseCoder::ProcessDec(Byte *data, UInt32 size)
 #else
   const bool useSSE2 = false;
   (void)useSSE2;
+#endif
+#ifdef MY_CPU_ARM_OR_ARM64
+  NAscon::InitSIMD();
+  const bool useNEON = ASCON_USE_NEON;
+#else
+  const bool useNEON = false;
+  (void)useNEON;
 #endif
   if (!_keyDerived)
   {
@@ -826,6 +861,18 @@ void CBaseCoder::ProcessDec(Byte *data, UInt32 size)
       {
         do {
           NAscon::AsconDecBlock_SSE2(_state, p);
+          NAscon::AsconP8(_state);
+          p += NAscon::kRateSize;
+          remaining -= NAscon::kRateSize;
+        } while (remaining >= NAscon::kRateSize);
+      }
+      else
+#endif
+#ifdef MY_CPU_ARM_OR_ARM64
+      if (useNEON)
+      {
+        do {
+          NAscon::AsconDecBlock_NEON(_state, p);
           NAscon::AsconP8(_state);
           p += NAscon::kRateSize;
           remaining -= NAscon::kRateSize;

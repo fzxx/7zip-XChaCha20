@@ -601,7 +601,7 @@ HRESULT CDecoder::Decode(
           Int32 authResult = 0;
           RINOK(authVerify->CryptoAuthVerify(&authResult))
           if (authResult != 0)
-            return E_FAIL;
+            return S_FALSE;
         }
       }
       #endif
